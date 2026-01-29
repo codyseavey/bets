@@ -7,7 +7,7 @@ Project-specific instructions for AI agents working on this codebase.
 LetsBet is a betting pools app for groups of friends, family, and coworkers. Users sign in with Google OAuth, create or join groups via invite codes, and participate in betting pools using a points-based system.
 
 **Domain:** bets.seavey.dev
-**Host Port:** 3081 (container 8080)
+**Host Port:** 3082 (container 8080)
 
 ## Tech Stack
 
