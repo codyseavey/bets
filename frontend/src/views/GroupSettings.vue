@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useGroupsStore } from '../stores/groups'
 import { useAuthStore } from '../stores/auth'
 import { formatPoints } from '../utils/format'
 
 const route = useRoute()
+const router = useRouter()
 const groupsStore = useGroupsStore()
 const authStore = useAuthStore()
 
@@ -18,6 +19,7 @@ const grantNote = ref('')
 const error = ref('')
 const message = ref('')
 const copied = ref(false)
+const showDeleteConfirm = ref(false)
 
 onMounted(async () => {
   await groupsStore.fetchGroup(groupId)
@@ -74,6 +76,15 @@ async function regenerateInvite() {
     message.value = 'New invite code generated'
   } catch {
     error.value = 'Failed to regenerate invite code'
+  }
+}
+
+async function deleteGroup() {
+  try {
+    await groupsStore.deleteGroup(groupId)
+    router.push('/')
+  } catch {
+    error.value = 'Failed to delete group'
   }
 }
 
@@ -247,6 +258,41 @@ function copyInvite() {
             Kick
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-red-300 dark:border-red-700 p-6">
+      <h2 class="text-lg font-semibold text-red-600 dark:text-red-400 mb-4">
+        Danger Zone
+      </h2>
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        Permanently delete this group and all its pools, bets, and history. This cannot be undone.
+      </p>
+      <div v-if="!showDeleteConfirm">
+        <button
+          class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          @click="showDeleteConfirm = true"
+        >
+          Delete Group
+        </button>
+      </div>
+      <div
+        v-else
+        class="flex items-center gap-3"
+      >
+        <button
+          class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          @click="deleteGroup"
+        >
+          Yes, delete permanently
+        </button>
+        <button
+          class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+          @click="showDeleteConfirm = false"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   </div>

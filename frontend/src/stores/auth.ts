@@ -38,6 +38,18 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async register(email: string, password: string, name: string) {
+      const { data } = await api.post('/auth/register', { email, password, name })
+      this.user = data
+      return data
+    },
+
+    async login(email: string, password: string) {
+      const { data } = await api.post('/auth/login', { email, password })
+      this.user = data
+      return data
+    },
+
     loginWithGoogle() {
       window.location.href = '/api/auth/google'
     },

@@ -194,6 +194,48 @@ func (s *GroupService) RegenerateInviteCode(groupID string) (string, error) {
 	return code, nil
 }
 
+func (s *GroupService) DeleteGroup(groupID string) error {
+	tx := s.db.Begin()
+
+	// Delete in dependency order: bets -> pool options -> pools -> points logs -> members -> group
+	// First get all pool IDs for this group
+	var poolIDs []string
+	if err := tx.Model(&models.Pool{}).Where("group_id = ?", groupID).Pluck("id", &poolIDs).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to find pools: %w", err)
+	}
+
+	if len(poolIDs) > 0 {
+		if err := tx.Where("pool_id IN ?", poolIDs).Delete(&models.Bet{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to delete bets: %w", err)
+		}
+		if err := tx.Where("pool_id IN ?", poolIDs).Delete(&models.PoolOption{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to delete pool options: %w", err)
+		}
+	}
+
+	if err := tx.Where("group_id = ?", groupID).Delete(&models.Pool{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete pools: %w", err)
+	}
+	if err := tx.Where("group_id = ?", groupID).Delete(&models.PointsLog{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete points logs: %w", err)
+	}
+	if err := tx.Where("group_id = ?", groupID).Delete(&models.GroupMember{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete members: %w", err)
+	}
+	if err := tx.Delete(&models.Group{}, "id = ?", groupID).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete group: %w", err)
+	}
+
+	return tx.Commit().Error
+}
+
 func (s *GroupService) GetMember(groupID, userID string) (*models.GroupMember, error) {
 	var member models.GroupMember
 	err := s.db.Where("group_id = ? AND user_id = ?", groupID, userID).Preload("User").First(&member).Error

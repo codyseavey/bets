@@ -34,7 +34,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 func createTestUser(t *testing.T, db *gorm.DB, id, name string) *models.User {
 	t.Helper()
-	user := &models.User{ID: id, GoogleID: "google-" + id, Email: id + "@test.com", Name: name}
+	googleID := "google-" + id
+	user := &models.User{ID: id, GoogleID: &googleID, Email: id + "@test.com", Name: name}
 	if err := db.Create(user).Error; err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
@@ -190,6 +191,92 @@ func TestGetUserGroups(t *testing.T) {
 	}
 	if len(groups) != 2 {
 		t.Errorf("expected 2 groups, got %d", len(groups))
+	}
+}
+
+func TestDeleteGroup(t *testing.T) {
+	db := setupTestDB(t)
+	groupSvc := NewGroupService(db)
+	poolSvc := NewPoolService(db)
+
+	admin := createTestUser(t, db, "admin", "Admin")
+	member := createTestUser(t, db, "member", "Member")
+
+	group, err := groupSvc.CreateGroup("Delete Me", 500, admin.ID)
+	if err != nil {
+		t.Fatalf("CreateGroup failed: %v", err)
+	}
+	if _, err := groupSvc.JoinGroup(group.InviteCode, member.ID); err != nil {
+		t.Fatalf("JoinGroup failed: %v", err)
+	}
+
+	// Create a pool with bets to verify cascade deletion
+	pool, err := poolSvc.CreatePool(group.ID, admin.ID, CreatePoolRequest{
+		Title:   "Will it blend?",
+		Options: []string{"Yes", "No"},
+	})
+	if err != nil {
+		t.Fatalf("CreatePool failed: %v", err)
+	}
+	if _, err := poolSvc.PlaceBet(pool.ID, member.ID, PlaceBetRequest{OptionID: pool.Options[0].ID, Points: 100}); err != nil {
+		t.Fatalf("PlaceBet failed: %v", err)
+	}
+
+	// Sanity check: data exists before delete
+	var poolCount, betCount, memberCount, logCount int64
+	db.Model(&models.Pool{}).Where("group_id = ?", group.ID).Count(&poolCount)
+	db.Model(&models.Bet{}).Where("pool_id = ?", pool.ID).Count(&betCount)
+	db.Model(&models.GroupMember{}).Where("group_id = ?", group.ID).Count(&memberCount)
+	db.Model(&models.PointsLog{}).Where("group_id = ?", group.ID).Count(&logCount)
+
+	if poolCount == 0 || betCount == 0 || memberCount == 0 || logCount == 0 {
+		t.Fatal("test setup failed: expected data to exist before delete")
+	}
+
+	// Delete the group
+	if err := groupSvc.DeleteGroup(group.ID); err != nil {
+		t.Fatalf("DeleteGroup failed: %v", err)
+	}
+
+	// Verify everything is gone
+	db.Model(&models.Group{}).Where("id = ?", group.ID).Count(&poolCount)
+	if poolCount != 0 {
+		t.Error("group should be deleted")
+	}
+
+	db.Model(&models.Pool{}).Where("group_id = ?", group.ID).Count(&poolCount)
+	if poolCount != 0 {
+		t.Error("pools should be deleted")
+	}
+
+	db.Model(&models.PoolOption{}).Where("pool_id = ?", pool.ID).Count(&poolCount)
+	if poolCount != 0 {
+		t.Error("pool options should be deleted")
+	}
+
+	db.Model(&models.Bet{}).Where("pool_id = ?", pool.ID).Count(&betCount)
+	if betCount != 0 {
+		t.Error("bets should be deleted")
+	}
+
+	db.Model(&models.GroupMember{}).Where("group_id = ?", group.ID).Count(&memberCount)
+	if memberCount != 0 {
+		t.Error("members should be deleted")
+	}
+
+	db.Model(&models.PointsLog{}).Where("group_id = ?", group.ID).Count(&logCount)
+	if logCount != 0 {
+		t.Error("points logs should be deleted")
+	}
+}
+
+func TestDeleteGroup_NonexistentGroup(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewGroupService(db)
+
+	// Deleting a nonexistent group should not error (no rows affected is fine)
+	if err := svc.DeleteGroup("nonexistent-id"); err != nil {
+		t.Fatalf("DeleteGroup on nonexistent group should not error, got: %v", err)
 	}
 }
 

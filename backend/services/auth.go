@@ -3,12 +3,14 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"gorm.io/gorm"
@@ -80,8 +82,9 @@ func (s *AuthService) ExchangeCode(ctx context.Context, code string) (*models.Us
 		return nil, fmt.Errorf("failed to parse user info: %w", err)
 	}
 
+	googleID := info.Sub
 	user := &models.User{
-		GoogleID:  info.Sub,
+		GoogleID:  &googleID,
 		Email:     info.Email,
 		Name:      info.Name,
 		AvatarURL: info.Picture,
@@ -89,7 +92,7 @@ func (s *AuthService) ExchangeCode(ctx context.Context, code string) (*models.Us
 
 	// Upsert: find by google_id or create
 	var existing models.User
-	result := s.db.Where("google_id = ?", info.Sub).First(&existing)
+	result := s.db.Where("google_id = ?", googleID).First(&existing)
 	if result.Error != nil {
 		user.ID = uuid.New().String()
 		if err := s.db.Create(user).Error; err != nil {
@@ -144,5 +147,49 @@ func (s *AuthService) GetUserByID(id string) (*models.User, error) {
 	if err := s.db.First(&user, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
+	return &user, nil
+}
+
+var ErrEmailTaken = errors.New("email already registered")
+
+func (s *AuthService) Register(email, password, name string) (*models.User, error) {
+	// Check if email already taken
+	var count int64
+	s.db.Model(&models.User{}).Where("email = ?", email).Count(&count)
+	if count > 0 {
+		return nil, ErrEmailTaken
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	user := &models.User{
+		ID:           uuid.New().String(),
+		Email:        email,
+		Name:         name,
+		PasswordHash: string(hash),
+	}
+	if err := s.db.Create(user).Error; err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+	return user, nil
+}
+
+func (s *AuthService) Login(email, password string) (*models.User, error) {
+	var user models.User
+	if err := s.db.Where("email = ?", email).First(&user).Error; err != nil {
+		return nil, fmt.Errorf("invalid email or password")
+	}
+
+	if user.PasswordHash == "" {
+		return nil, fmt.Errorf("this account uses Google sign-in")
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return nil, fmt.Errorf("invalid email or password")
+	}
+
 	return &user, nil
 }

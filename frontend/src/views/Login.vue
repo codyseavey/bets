@@ -1,7 +1,35 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const authStore = useAuthStore()
+const router = useRouter()
+
+const mode = ref<'login' | 'register'>('login')
+const email = ref('')
+const password = ref('')
+const name = ref('')
+const error = ref('')
+const loading = ref(false)
+
+async function handleSubmit() {
+  error.value = ''
+  loading.value = true
+  try {
+    if (mode.value === 'register') {
+      await authStore.register(email.value, password.value, name.value)
+    } else {
+      await authStore.login(email.value, password.value)
+    }
+    router.push('/')
+  } catch (e: unknown) {
+    const axiosError = e as { response?: { data?: { error?: string } } }
+    error.value = axiosError.response?.data?.error || 'Something went wrong'
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -13,6 +41,95 @@ const authStore = useAuthStore()
       <p class="text-gray-500 dark:text-gray-400 mb-8">
         Friendly betting pools with your crew
       </p>
+
+      <!-- Local auth form -->
+      <form
+        class="space-y-4 text-left mb-6"
+        @submit.prevent="handleSubmit"
+      >
+        <div v-if="mode === 'register'">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+          <input
+            v-model="name"
+            type="text"
+            required
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+            placeholder="Your name"
+          >
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+          <input
+            v-model="email"
+            type="email"
+            required
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+            placeholder="you@example.com"
+          >
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+          <input
+            v-model="password"
+            type="password"
+            required
+            :minlength="mode === 'register' ? 8 : undefined"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+            placeholder="Password"
+          >
+          <p
+            v-if="mode === 'register'"
+            class="text-xs text-gray-400 mt-1"
+          >
+            Minimum 8 characters
+          </p>
+        </div>
+
+        <p
+          v-if="error"
+          class="text-red-500 dark:text-red-400 text-sm"
+        >
+          {{ error }}
+        </p>
+
+        <button
+          type="submit"
+          :disabled="loading"
+          class="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+        >
+          {{ loading ? 'Please wait...' : mode === 'register' ? 'Create Account' : 'Sign In' }}
+        </button>
+      </form>
+
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        <template v-if="mode === 'login'">
+          Don't have an account?
+          <button
+            class="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            @click="mode = 'register'; error = ''"
+          >
+            Sign up
+          </button>
+        </template>
+        <template v-else>
+          Already have an account?
+          <button
+            class="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            @click="mode = 'login'; error = ''"
+          >
+            Sign in
+          </button>
+        </template>
+      </p>
+
+      <div class="relative mb-6">
+        <div class="absolute inset-0 flex items-center">
+          <div class="w-full border-t border-gray-300 dark:border-gray-600" />
+        </div>
+        <div class="relative flex justify-center text-sm">
+          <span class="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">or</span>
+        </div>
+      </div>
 
       <button
         class="w-full flex items-center justify-center gap-3 px-6 py-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:shadow-md transition-shadow text-gray-700 dark:text-gray-200 font-medium"

@@ -77,6 +77,14 @@ export const useGroupsStore = defineStore('groups', {
       await this.fetchGroup(groupId)
     },
 
+    async deleteGroup(groupId: string) {
+      await api.delete(`/groups/${groupId}`)
+      this.groups = this.groups.filter(g => g.id !== groupId)
+      if (this.activeGroup?.id === groupId) {
+        this.activeGroup = null
+      }
+    },
+
     async regenerateInvite(groupId: string) {
       const { data } = await api.post(`/groups/${groupId}/regenerate-invite`)
       if (this.activeGroup && this.activeGroup.id === groupId) {

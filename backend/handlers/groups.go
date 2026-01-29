@@ -166,6 +166,22 @@ func (h *GroupHandler) KickMember(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "member kicked"})
 }
 
+func (h *GroupHandler) Delete(c *gin.Context) {
+	groupID := c.Param("id")
+
+	if err := h.groupService.DeleteGroup(groupID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.hub.BroadcastToGroup(groupID, services.WSEvent{
+		Type:    "group_deleted",
+		Payload: gin.H{"group_id": groupID},
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "group deleted"})
+}
+
 func (h *GroupHandler) RegenerateInvite(c *gin.Context) {
 	groupID := c.Param("id")
 	code, err := h.groupService.RegenerateInviteCode(groupID)

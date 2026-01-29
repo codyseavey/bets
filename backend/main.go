@@ -54,6 +54,8 @@ func main() {
 	{
 		auth.GET("/google", authHandler.GoogleLogin)
 		auth.GET("/google/callback", authHandler.GoogleCallback)
+		auth.POST("/register", authHandler.Register)
+		auth.POST("/login", authHandler.Login)
 		auth.POST("/logout", authHandler.Logout)
 	}
 
@@ -94,6 +96,7 @@ func main() {
 				admin.POST("/grant", groupHandler.GrantPoints)
 				admin.DELETE("/members/:uid", groupHandler.KickMember)
 				admin.POST("/regenerate-invite", groupHandler.RegenerateInvite)
+				admin.DELETE("", groupHandler.Delete)
 			}
 		}
 	}
