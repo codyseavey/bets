@@ -61,7 +61,12 @@ func runManualMigrations(db *gorm.DB) {
 	}
 
 	log.Println("Migrating: making google_id nullable for local auth support")
+
+	// Foreign keys must be disabled to DROP TABLE users, since other tables
+	// reference it. PRAGMA foreign_keys cannot be changed inside a transaction,
+	// so we toggle it before and after.
 	statements := []string{
+		`PRAGMA foreign_keys = OFF`,
 		`CREATE TABLE users_backup (
 			id TEXT PRIMARY KEY,
 			google_id TEXT,
@@ -76,17 +81,13 @@ func runManualMigrations(db *gorm.DB) {
 		`ALTER TABLE users_backup RENAME TO users`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+		`PRAGMA foreign_keys = ON`,
 	}
 
-	tx := db.Begin()
 	for _, stmt := range statements {
-		if err := tx.Exec(stmt).Error; err != nil {
-			tx.Rollback()
+		if err := db.Exec(stmt).Error; err != nil {
 			log.Fatalf("Migration failed on statement [%s]: %v", stmt, err)
 		}
-	}
-	if err := tx.Commit().Error; err != nil {
-		log.Fatalf("Migration commit failed: %v", err)
 	}
 	log.Println("Migration complete: google_id is now nullable")
 }
