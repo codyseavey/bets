@@ -4,7 +4,7 @@ Project-specific instructions for AI agents working on this codebase.
 
 ## Overview
 
-LetsBet is a betting pools app for groups of friends, family, and coworkers. Users sign in with Google OAuth, create or join groups via invite codes, and participate in betting pools using a points-based system.
+LetsBet is a betting pools app for groups of friends, family, and coworkers. Users sign in with Google OAuth or a local email/password account, create or join groups via invite codes, and participate in betting pools using a points-based system.
 
 **Domain:** bets.seavey.dev
 **Host Port:** 3082 (container 8080)
@@ -13,7 +13,7 @@ LetsBet is a betting pools app for groups of friends, family, and coworkers. Use
 
 - **Frontend:** Vue 3 + TypeScript + Vite 7 + Tailwind CSS 4 + Pinia 3
 - **Backend:** Go 1.24 + Gin + GORM + SQLite (WAL mode)
-- **Auth:** Google OAuth 2.0 + JWT (httpOnly cookie)
+- **Auth:** Google OAuth 2.0 + local email/password (bcrypt) + JWT (httpOnly cookie)
 - **Real-time:** WebSockets (gorilla/websocket)
 - **Deploy:** Docker multi-stage, nginx, Cloudflare CDN
 
@@ -26,7 +26,7 @@ backend/
 ├── main.go              # Entry point, route registration, SPA serving
 ├── config/config.go     # Env-based configuration
 ├── models/              # GORM models (User, Group, GroupMember, Pool, PoolOption, Bet, PointsLog)
-├── storage/database.go  # SQLite init with WAL mode, auto-migration
+├── storage/database.go  # SQLite init with WAL mode, auto-migration, manual migrations
 ├── middleware/           # JWT auth middleware, group membership checks
 ├── handlers/            # HTTP handlers (auth, groups, pools, leaderboard, websocket)
 ├── services/            # Business logic (auth/JWT, group mgmt, pool resolution, WS hub)
@@ -79,7 +79,8 @@ cd backend && go test -race ./...
 
 Tests use in-memory SQLite databases (no mocks). Each test gets a fresh DB.
 Key test files:
-- `services/group_test.go` - Group CRUD, join, grant points, kick, invite codes
+- `services/auth_test.go` - Local registration, login, duplicate email, wrong password, Google-only account rejection, JWT round-trip
+- `services/group_test.go` - Group CRUD, join, grant points, kick, invite codes, group deletion (cascade)
 - `services/pool_test.go` - Full pool lifecycle: create, bet, lock, resolve (proportional split, no winners refund), cancel
 
 ## Linting
@@ -104,6 +105,8 @@ cd backend && gofmt -w . && goimports -local github.com/codyseavey/bets -w .
 - **Points are deducted immediately** when a bet is placed and credited on resolution. All point changes are logged in `PointsLog` for a full audit trail.
 - **One bet per user per pool.** Enforced by a unique composite index on `(pool_id, user_id)`.
 - **Invite codes** are 8-character alphanumeric strings using an unambiguous charset (no 0/O, 1/I).
+- **Local auth** uses bcrypt for password hashing. GoogleID is nullable (`*string`) so users can exist without a Google account. A manual SQLite migration in `storage/database.go` handles the NOT NULL to nullable transition on existing databases.
+- **Group deletion** cascades to all related data (bets, pool options, pools, points logs, members) in a single transaction. Only group admins can delete.
 
 ## Deployment
 

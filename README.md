@@ -4,7 +4,7 @@ Friendly betting pools for groups of friends, family, and coworkers. Create grou
 
 ## Features
 
-- **Google OAuth** sign-in
+- **Google OAuth** or **email/password** sign-in
 - **Groups** with invite codes, configurable starting points, admin controls
 - **Betting pools** with multiple options, one bet per person per pool
 - **Proportional payouts** when pools are resolved
@@ -19,7 +19,7 @@ Friendly betting pools for groups of friends, family, and coworkers. Create grou
 ### Prerequisites
 - Go 1.24+
 - Node.js 20+
-- Google OAuth credentials ([console.cloud.google.com](https://console.cloud.google.com))
+- Google OAuth credentials ([console.cloud.google.com](https://console.cloud.google.com)) (optional, only needed for Google sign-in)
 
 ### Backend
 ```bash
@@ -40,7 +40,7 @@ Open `http://localhost:5173`. The Vite dev server proxies API requests to the Go
 
 ## How It Works
 
-1. Sign in with Google
+1. Sign in with Google or create an account with email/password
 2. Create a group (you become admin, get starting points)
 3. Share the invite code with friends
 4. Create a betting pool with 2+ options
@@ -65,6 +65,6 @@ See `CLAUDE.md` for full deployment details and required environment variables.
 |-------|-----------|
 | Frontend | Vue 3, TypeScript, Vite 7, Tailwind CSS 4, Pinia 3 |
 | Backend | Go 1.24, Gin, GORM, SQLite (WAL) |
-| Auth | Google OAuth 2.0 + JWT |
+| Auth | Google OAuth 2.0 + local email/password (bcrypt) + JWT |
 | Real-time | WebSockets (gorilla/websocket) |
 | Deploy | Docker, nginx, GitHub Actions, Cloudflare |
