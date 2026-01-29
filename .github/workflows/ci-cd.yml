@@ -140,7 +140,14 @@ jobs:
             export GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             export GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
             export JWT_SECRET=${{ secrets.JWT_SECRET }}
-            docker compose down
+            docker compose down --remove-orphans || true
+
+            # Kill anything squatting on port 3081 from a previous manual run
+            STALE=$(docker ps -q --filter "publish=3081") || true
+            if [ -n "$STALE" ]; then
+              docker rm -f $STALE
+            fi
+
             docker compose up -d
 
             # Health check
