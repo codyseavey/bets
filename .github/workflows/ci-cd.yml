@@ -135,11 +135,20 @@ jobs:
             # Pull new image while old is still running
             docker pull ghcr.io/codyseavey/bets/app:${{ github.sha }}
 
+            # Write .env so secrets survive container restarts.
+            # docker compose reads this automatically on every "up",
+            # including when restart: always kicks in.
+            cat > .env <<'ENVEOF'
+            IMAGE_TAG=${{ github.sha }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            ENVEOF
+            # Strip leading whitespace from heredoc
+            sed -i 's/^[[:space:]]*//' .env
+            chmod 600 .env
+
             # Swap
-            export IMAGE_TAG=${{ github.sha }}
-            export GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            export GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-            export JWT_SECRET=${{ secrets.JWT_SECRET }}
             docker compose down --remove-orphans || true
 
             # Kill anything squatting on port 3082 from a previous manual run
