@@ -107,7 +107,7 @@ jobs:
   deploy:
     needs: [docker-build-push, changes]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     environment: production
     steps:
       - uses: actions/checkout@v4
