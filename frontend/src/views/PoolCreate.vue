@@ -1,0 +1,133 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { usePoolsStore } from '../stores/pools'
+
+const route = useRoute()
+const router = useRouter()
+const poolsStore = usePoolsStore()
+
+const groupId = route.params.id as string
+const title = ref('')
+const description = ref('')
+const options = ref(['', ''])
+const error = ref('')
+const submitting = ref(false)
+
+function addOption() {
+  options.value.push('')
+}
+
+function removeOption(index: number) {
+  if (options.value.length > 2) {
+    options.value.splice(index, 1)
+  }
+}
+
+async function submit() {
+  const trimmedTitle = title.value.trim()
+  const trimmedOptions = options.value.map(o => o.trim()).filter(o => o)
+
+  if (!trimmedTitle) {
+    error.value = 'Title is required'
+    return
+  }
+  if (trimmedOptions.length < 2) {
+    error.value = 'At least 2 options are required'
+    return
+  }
+
+  submitting.value = true
+  error.value = ''
+  try {
+    const pool = await poolsStore.createPool(groupId, trimmedTitle, description.value.trim(), trimmedOptions)
+    router.push(`/groups/${groupId}/pools/${pool.id}`)
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { error?: string } } }
+    error.value = err.response?.data?.error || 'Failed to create pool'
+  } finally {
+    submitting.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="max-w-lg mx-auto">
+    <h1 class="text-2xl font-bold mb-6">
+      Create a Pool
+    </h1>
+
+    <form
+      class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-4"
+      @submit.prevent="submit"
+    >
+      <div>
+        <label class="block text-sm font-medium mb-1">Title</label>
+        <input
+          v-model="title"
+          type="text"
+          placeholder="e.g. Super Bowl Winner"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-1">Description (optional)</label>
+        <textarea
+          v-model="description"
+          rows="2"
+          placeholder="Rules, details, etc."
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+        />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-2">Options</label>
+        <div class="space-y-2">
+          <div
+            v-for="(_, index) in options"
+            :key="index"
+            class="flex gap-2"
+          >
+            <input
+              v-model="options[index]"
+              type="text"
+              :placeholder="`Option ${index + 1}`"
+              class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+            <button
+              v-if="options.length > 2"
+              type="button"
+              class="px-3 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+              @click="removeOption(index)"
+            >
+              X
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          @click="addOption"
+        >
+          + Add Option
+        </button>
+      </div>
+
+      <p
+        v-if="error"
+        class="text-red-500 dark:text-red-400 text-sm"
+      >
+        {{ error }}
+      </p>
+
+      <button
+        type="submit"
+        :disabled="submitting"
+        class="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+      >
+        {{ submitting ? 'Creating...' : 'Create Pool' }}
+      </button>
+    </form>
+  </div>
+</template>

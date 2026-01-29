@@ -1,0 +1,170 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      deployment: ${{ steps.filter.outputs.deployment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'Dockerfile'
+            frontend:
+              - 'frontend/**'
+              - 'Dockerfile'
+            deployment:
+              - 'deployment/**'
+              - 'docker-compose.yml'
+
+  backend-lint-test:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'push'
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install build deps
+        run: |
+          if command -v dnf &>/dev/null; then
+            sudo dnf install -y gcc
+          elif command -v apt-get &>/dev/null; then
+            sudo apt-get update && sudo apt-get install -y gcc
+          fi
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: backend
+      - name: Test
+        working-directory: backend
+        run: CGO_ENABLED=1 go test -race -v ./...
+
+  frontend-lint-build:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  docker-build-push:
+    needs: [backend-lint-test, frontend-lint-build]
+    if: |
+      always() &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/codyseavey/bets/app:${{ github.sha }}
+            ghcr.io/codyseavey/bets/app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [docker-build-push, changes]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 192.168.86.227
+          username: cody
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "docker-compose.yml,deployment/"
+          target: ~/bets
+          overwrite: true
+
+      - name: Deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 192.168.86.227
+          username: cody
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/bets
+
+            # Pull new image while old is still running
+            docker pull ghcr.io/codyseavey/bets/app:${{ github.sha }}
+
+            # Swap
+            export IMAGE_TAG=${{ github.sha }}
+            export GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            export GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            export JWT_SECRET=${{ secrets.JWT_SECRET }}
+            docker compose down
+            docker compose up -d
+
+            # Health check
+            sleep 3
+            curl -sf http://localhost:3081/health || exit 1
+
+            # Prune old images
+            docker image prune -af --filter "until=168h" || true
+
+      - name: Update nginx config
+        if: needs.changes.outputs.deployment == 'true'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 192.168.86.227
+          username: cody
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            sudo cp ~/bets/deployment/bets.seavey.dev.conf /etc/nginx/conf.d/bets.seavey.dev.conf
+            sudo nginx -t && sudo systemctl reload nginx
+
+      - name: Purge Cloudflare cache
+        if: needs.changes.outputs.frontend == 'true'
+        run: |
+          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}'
