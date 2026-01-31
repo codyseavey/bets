@@ -107,7 +107,13 @@ func main() {
 	// Serve frontend SPA
 	distPath := cfg.FrontendDistPath
 	if _, err := os.Stat(distPath); err == nil {
-		r.Static("/assets", filepath.Join(distPath, "assets"))
+		// Serve static assets with CORS and cache headers so browsers
+		// behind CDNs (Cloudflare) don't choke on cross-origin checks.
+		r.Group("/assets", func(c *gin.Context) {
+			c.Header("Access-Control-Allow-Origin", "*")
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+			c.Next()
+		}).Static("/", filepath.Join(distPath, "assets"))
 		r.StaticFile("/favicon.ico", filepath.Join(distPath, "favicon.ico"))
 
 		// SPA fallback: serve index.html for all unmatched routes
