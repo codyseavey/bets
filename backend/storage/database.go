@@ -25,6 +25,17 @@ func InitDB(dbPath string) *gorm.DB {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
+	// Manual migrations must run before AutoMigrate because they recreate
+	// tables with raw SQL, and AutoMigrate needs to see the final schema.
+	runManualMigrations(db)
+
+	// Backfill NULL name values before AutoMigrate tries to enforce NOT NULL.
+	// The name column was added after initial users were created via Google OAuth,
+	// so existing rows may have NULL names. We use the email prefix as a fallback.
+	if db.Migrator().HasTable(&models.User{}) && db.Migrator().HasColumn(&models.User{}, "name") {
+		db.Exec(`UPDATE users SET name = SUBSTR(email, 1, INSTR(email, '@') - 1) WHERE name IS NULL OR name = ''`)
+	}
+
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Group{},
@@ -36,8 +47,6 @@ func InitDB(dbPath string) *gorm.DB {
 	); err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
-
-	runManualMigrations(db)
 
 	log.Println("Database initialized successfully")
 	return db
@@ -67,15 +76,9 @@ func runManualMigrations(db *gorm.DB) {
 	// so we toggle it before and after.
 	statements := []string{
 		`PRAGMA foreign_keys = OFF`,
-		`CREATE TABLE users_backup (
-			id TEXT PRIMARY KEY,
-			google_id TEXT,
-			email TEXT NOT NULL,
-			name TEXT NOT NULL,
-			avatar_url TEXT,
-			password_hash TEXT,
-			created_at DATETIME
-		)`,
+		// Use GORM-compatible DDL (backtick-quoted lowercase names, table-level PRIMARY KEY)
+		// so AutoMigrate won't see a schema mismatch and try to rebuild.
+		"CREATE TABLE `users_backup` (`id` text,`google_id` text,`email` text NOT NULL,`name` text NOT NULL,`avatar_url` text,`password_hash` text,`created_at` datetime,PRIMARY KEY (`id`))",
 		`INSERT INTO users_backup SELECT id, google_id, email, name, avatar_url, COALESCE(password_hash, ''), created_at FROM users`,
 		`DROP TABLE users`,
 		`ALTER TABLE users_backup RENAME TO users`,

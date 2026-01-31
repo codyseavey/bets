@@ -151,8 +151,8 @@ jobs:
             # Swap
             docker compose down --remove-orphans || true
 
-            # Kill anything squatting on port 3082 from a previous manual run
-            STALE=$(docker ps -q --filter "publish=3082") || true
+            # Kill anything squatting on port 3083 from a previous manual run
+            STALE=$(docker ps -q --filter "publish=3083") || true
             if [ -n "$STALE" ]; then
               docker rm -f $STALE
             fi
@@ -161,7 +161,7 @@ jobs:
 
             # Health check
             sleep 3
-            curl -sf http://localhost:3082/health || exit 1
+            curl -sf http://localhost:3083/health || exit 1
 
             # Prune old images
             docker image prune -af --filter "until=168h" || true
